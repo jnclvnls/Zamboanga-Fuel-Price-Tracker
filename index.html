@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zamboanga City Fuel Prices</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #5f6b7a; --line: #dfe3ea;
+    --accent: #1f6feb; --warn: #9a6700; --ok: #1a7f37;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --card: #171b21; --text: #e6e9ef; --muted: #98a2b3; --line: #2a303a;
+      --accent: #6cb0ff; --warn: #e3b341; --ok: #56d364;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1216; --card: #171b21; --text: #e6e9ef; --muted: #98a2b3; --line: #2a303a;
+    --accent: #6cb0ff; --warn: #e3b341; --ok: #56d364;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 0.9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { background: transparent; color: var(--text); border: 0; padding: 8px 12px; cursor: pointer; font: inherit; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  select { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .stat .label { color: var(--muted); font-size: 0.8rem; }
+  .stat .value { font-size: 1.35rem; font-weight: 600; }
+  .stat .delta { font-size: 0.85rem; }
+  .up { color: var(--warn); } .down { color: var(--ok); } .flat { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  .scroll { overflow-x: auto; }
+  .muted { color: var(--muted); }
+  .notice { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--card); border-radius: 6px; font-size: 0.9rem; }
+  svg { width: 100%; height: auto; display: block; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); }
+  footer { color: var(--muted); font-size: 0.82rem; margin-top: 24px; }
+  @media (max-width: 480px) { main { padding: 16px; } .stat .value { font-size: 1.15rem; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Zamboanga City fuel prices</h1>
+  <p class="sub" id="updated">Loading…</p>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Fuel type" id="fuelSeg">
+        <button data-fuel="RON 95" aria-pressed="true">Gasoline 95</button>
+        <button data-fuel="RON 91" aria-pressed="false">Gasoline 91</button>
+        <button data-fuel="DIESEL" aria-pressed="false">Diesel</button>
+        <button data-fuel="DIESEL PLUS" aria-pressed="false">Diesel Plus</button>
+      </div>
+      <label class="muted">Week
+        <select id="weekSel"></select>
+      </label>
+    </div>
+
+    <div class="stat-row" id="stats"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1rem;margin:0 0 8px">Price range by brand</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:0.85rem">Lowest to highest price DOE monitored at each brand's stations in the city that week.</p>
+    <div class="scroll"><table id="brandTable"></table></div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1rem;margin:0 0 8px">Weekly trend</h2>
+    <div id="chart"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <footer>
+    Source: Department of Energy, Mindanao Field Office, weekly price monitoring of liquid fuel retail outlets.
+    These are DOE monitoring ranges, not guaranteed prices. Stations set their own price within the allowed range.
+    Prices shown are per liter, VAT inclusive.
+  </footer>
+</main>
+
+<script src="data/prices.js"></script>
+<script>
+(function () {
+  const BRANDS = ["Petron", "Shell", "Caltex", "Phoenix", "Flying V", "Seaoil", "Jetti", "My Gas", "Independent"];
+  const FUEL_LABEL = { "RON 95": "Gasoline 95", "RON 91": "Gasoline 91", "DIESEL": "Diesel", "DIESEL PLUS": "Diesel Plus" };
+  const COLORS = ["#1f6feb", "#d1242f", "#1a7f37", "#bf8700", "#8250df", "#0969da", "#cf222e"];
+
+  const data = window.PRICE_DATA || { weeks: [] };
+  const weeks = [...(data.weeks || [])].sort((a, b) => a.week_start.localeCompare(b.week_start));
+  let fuel = "RON 95";
+  let weekIdx = weeks.length - 1;
+
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => (n == null ? "–" : "₱" + n.toFixed(2));
+  const range = (r) => (!r ? "–" : r[0] === r[1] ? fmt(r[0]) : fmt(r[0]) + " – " + fmt(r[1]));
+  const dateLabel = (s) => new Date(s + "T00:00:00+08:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+
+  function currentWeek() { return weeks[weekIdx]; }
+  function prevWeek() { return weeks[weekIdx - 1]; }
+
+  function overallMid(w, f) {
+    const p = w && w.products[f];
+    if (!p || !p.overall) return null;
+    return (p.overall[0] + p.overall[1]) / 2;
+  }
+
+  function renderHeader() {
+    if (!weeks.length) {
+      $("updated").textContent = "No data yet. Run fetch_prices.py to load the DOE reports.";
+      return;
+    }
+    const w = currentWeek();
+    const when = data.updated ? new Date(data.updated).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }) : "unknown";
+    $("updated").textContent = "Week of " + dateLabel(w.week_start) + " to " + dateLabel(w.week_end) + " · Data pulled " + when;
+
+    const age = data.updated ? (Date.now() - Date.parse(data.updated)) / 86400000 : 99;
+    const latest = weeks[weeks.length - 1];
+    const notice = $("notice");
+    if (age > 10 || weekIdx !== weeks.length - 1 && false) {
+      notice.hidden = false;
+      notice.textContent = "This data was last refreshed more than 10 days ago. A newer DOE report may be available.";
+    } else if (latest.week_end < new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10)) {
+      notice.hidden = false;
+      notice.textContent = "The newest week in this data ended over two weeks ago. Prices may have changed since.";
+    } else {
+      notice.hidden = true;
+    }
+  }
+
+  function renderStats() {
+    const w = currentWeek(), pw = prevWeek();
+    const cards = Object.keys(FUEL_LABEL).map((f) => {
+      const mid = overallMid(w, f), pmid = overallMid(pw, f);
+      let delta = "";
+      if (mid != null && pmid != null) {
+        const d = mid - pmid;
+        const cls = Math.abs(d) < 0.005 ? "flat" : d > 0 ? "up" : "down";
+        const sign = d > 0 ? "+" : d < 0 ? "−" : "";
+        delta = '<div class="delta ' + cls + '">' + sign + "₱" + Math.abs(d).toFixed(2) + " vs previous week</div>";
+      }
+      const r = w && w.products[f] ? w.products[f].overall : null;
+      return '<div class="stat' + (f === fuel ? '" style="border-color:var(--accent)' : "") + '" data-fuel="' + f + '">' +
+        '<div class="label">' + FUEL_LABEL[f] + "</div>" +
+        '<div class="value">' + range(r) + "</div>" + delta + "</div>";
+    });
+    $("stats").innerHTML = cards.join("");
+    $("stats").querySelectorAll(".stat").forEach((el) => el.addEventListener("click", () => setFuel(el.dataset.fuel)));
+  }
+
+  function renderBrands() {
+    const w = currentWeek();
+    const p = w && w.products[fuel];
+    if (!p) { $("brandTable").innerHTML = "<tr><td class='muted'>No data for this fuel this week.</td></tr>"; return; }
+    const rows = BRANDS.map((b) => {
+      const r = p.brands[b];
+      return "<tr><td>" + b + "</td><td>" + (r ? range(r) : '<span class="muted">not monitored</span>') + "</td></tr>";
+    });
+    $("brandTable").innerHTML =
+      "<thead><tr><th>Brand</th><th>Low – high</th></tr></thead><tbody>" + rows.join("") + "</tbody>";
+  }
+
+  function renderChart() {
+    const pts = weeks.map((w, i) => ({ i, label: dateLabel(w.week_start), mid: overallMid(w, fuel) })).filter((p) => p.mid != null);
+    const box = $("chart");
+    if (pts.length < 2) {
+      box.innerHTML = '<p class="muted">Need at least two weeks of data to show a trend.</p>';
+      $("legend").innerHTML = "";
+      return;
+    }
+    const W = 640, H = 240, padL = 48, padR = 16, padT = 16, padB = 36;
+    const vals = pts.map((p) => p.mid);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi - lo < 1) { lo -= 0.5; hi += 0.5; }
+    lo = Math.floor(lo - 0.5); hi = Math.ceil(hi + 0.5);
+    const x = (k) => padL + (k * (W - padL - padR)) / Math.max(1, pts.length - 1);
+    const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+
+    let grid = "";
+    const decimals = hi - lo < 4 ? 1 : 0;
+    for (let v = lo; v <= hi + 1e-9; v += (hi - lo) / 4) {
+      grid += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)"/>' +
+        '<text x="' + (padL - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end" font-size="11" fill="var(--muted)">' + v.toFixed(decimals) + "</text>";
+    }
+    const path = pts.map((p, k) => (k ? "L" : "M") + x(k).toFixed(1) + "," + y(p.mid).toFixed(1)).join(" ");
+    const dots = pts.map((p, k) =>
+      '<circle cx="' + x(k) + '" cy="' + y(p.mid) + '" r="4" fill="var(--accent)"><title>' + p.label + ": ₱" + p.mid.toFixed(2) + " (midpoint)</title></circle>" +
+      '<text x="' + x(k) + '" y="' + (H - 12) + '" text-anchor="middle" font-size="11" fill="var(--muted)">' + p.label + "</text>").join("");
+    box.innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Weekly price midpoint trend">' +
+      grid + '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2.5"/>' + dots + "</svg>";
+    $("legend").innerHTML = '<span style="--c:var(--accent)">' + FUEL_LABEL[fuel] + " (midpoint of DOE range)</span>";
+  }
+
+  function renderWeekSelect() {
+    $("weekSel").innerHTML = weeks.map((w, i) =>
+      '<option value="' + i + '"' + (i === weekIdx ? " selected" : "") + ">" + dateLabel(w.week_start) + " – " + dateLabel(w.week_end) + "</option>").reverse().join("");
+  }
+
+  function setFuel(f) {
+    fuel = f;
+    document.querySelectorAll("#fuelSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.fuel === f)));
+    renderStats(); renderBrands(); renderChart();
+  }
+
+  document.querySelectorAll("#fuelSeg button").forEach((b) => b.addEventListener("click", () => setFuel(b.dataset.fuel)));
+  $("weekSel").addEventListener("change", (e) => { weekIdx = Number(e.target.value); renderHeader(); renderStats(); renderBrands(); });
+
+  renderHeader(); renderWeekSelect(); renderStats(); renderBrands(); renderChart();
+})();
+</script>
+</body>
+</html>
